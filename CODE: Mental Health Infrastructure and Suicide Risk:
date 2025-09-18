@@ -1,0 +1,883 @@
+#CODE: Mental Health Infrastructure and Suicide Risk: 
+# 1. inspect the datasets to understand
+!pip install scikit-learn
+!pip install shap
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, classification_report
+import shap
+
+from sklearn.metrics import roc_curve, auc
+import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report, accuracy_score, roc_auc_score, roc_curve
+
+# Load datasets
+suicide_rates_age_std = pd.read_csv('Age-standardized_suicide_rates-February_18_2025.csv')
+suicide_rates_crude = pd.read_csv('Crude_suicide_rates-February_18_2025.csv')
+facilities = pd.read_csv('Facilities-February_18_2025.csv')
+human_resources = pd.read_csv('Human_Resources-February_18_2025.csv')
+
+file_paths = {
+    'Age-standardized_suicide_rates': 'Age-standardized_suicide_rates-February_18_2025.csv',
+    'Crude_suicide_rates': 'Crude_suicide_rates-February_18_2025.csv',
+    'Facilities': 'Facilities-February_18_2025.csv',
+    'Human_Resources': 'Human_Resources-February_18_2025.csv'
+}
+datasets = {name: pd.read_csv(path) for name, path in file_paths.items()}
+
+
+# Load the datasets
+datasets = {name: pd.read_csv(path) for name, path in file_paths.items()}
+
+# Display basic information about each dataset
+dataset_info = {name: df.info() for name, df in datasets.items()}
+
+# Display first few rows of each dataset to understand structure
+dataset_samples = {name: df.head() for name, df in datasets.items()}
+
+dataset_samples
+
+
+#2 – Model Comparison: Random Forest, Gradient Boosting, VSM and Logistic Regression - #Table 1. Model Performance
+!pip install shap
+import shap
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+
+# Melt and prepare suicide data
+age_std_melted = suicide_rates_age_std.melt(id_vars=["Country", "Sex"], var_name="Year", value_name="Age_Std_Rate") # Changed 'suicide_rates_std' to 'suicide_rates_age_std'
+age_std_recent = age_std_melted[age_std_melted["Year"] == "2019"]
+age_std_recent["Age_Std_Rate"] = pd.to_numeric(age_std_recent["Age_Std_Rate"], errors="coerce")
+age_std_recent_grouped = age_std_recent.groupby("Country")["Age_Std_Rate"].mean().reset_index()
+
+crude_melted = suicide_rates_crude.melt(id_vars=["Country", "Sex"], var_name="Age_Group", value_name="Crude_Rate")
+crude_melted["Crude_Rate"] = pd.to_numeric(crude_melted["Crude_Rate"], errors="coerce")
+crude_avg = crude_melted.groupby(["Country", "Sex"])["Crude_Rate"].mean().reset_index()
+crude_avg_grouped = crude_avg.groupby("Country")["Crude_Rate"].mean().reset_index()
+
+# ... (rest of your code remains the same)
+
+# Merge datasets
+infra_df = pd.merge(facilities, human_resources, on=["Country", "Year"], how="outer")
+merged_df = pd.merge(infra_df, age_std_recent_grouped, on="Country", how="inner")
+merged_df = pd.merge(merged_df, crude_avg_grouped, on="Country", how="left")
+
+# Handle missing values
+merged_df.fillna(merged_df.median(numeric_only=True), inplace=True)
+
+# Define high risk target
+threshold = merged_df["Age_Std_Rate"].median()
+merged_df["High_Risk"] = (merged_df["Age_Std_Rate"] > threshold).astype(int)
+
+# Feature selection
+features = [
+    "Mental _hospitals", "health_units", "outpatient _facilities",
+    "day _treatment", "residential_facilities", "Psychiatrists",
+    "Nurses", "Social_workers", "Psychologists"
+]
+X = merged_df[features]
+y = merged_df["High_Risk"]
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+# Initialize models
+models = {
+    "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+    "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, random_state=42),
+    "Logistic Regression": LogisticRegression(max_iter=500),
+    "SVM": SVC(kernel="linear", probability=True)
+}
+
+# Train and evaluate models
+results = []
+roc_data = {}
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    y_proba = model.predict_proba(X_test)[:, 1]
+
+    report = classification_report(y_test, y_pred, output_dict=True)
+    accuracy = accuracy_score(y_test, y_pred)
+    auc_score = roc_auc_score(y_test, y_proba)
+
+    fpr, tpr, _ = roc_curve(y_test, y_proba)
+    roc_data[name] = (fpr, tpr, auc_score)
+
+    results.append({
+        "Model": name,
+        "Accuracy": accuracy,
+        "ROC AUC": auc_score,
+        "Precision (High Risk)": report["1"]["precision"],
+        "Recall (High Risk)": report["1"]["recall"],
+        "F1-Score (High Risk)": report["1"]["f1-score"],
+        "Precision (Low Risk)": report["0"]["precision"],
+        "Recall (Low Risk)": report["0"]["recall"],
+        "F1-Score (Low Risk)": report["0"]["f1-score"],
+    })
+
+results_df = pd.DataFrame(results)
+results_df.sort_values(by="Accuracy", ascending=False, inplace=True)
+results_df.reset_index(drop=True, inplace=True)
+
+# Display the results_df DataFrame
+from IPython.display import display
+display(results_df)
+
+
+#3 - Crude Suicide Rates by Age Group and Sex and Figure 2. SHAP Summary Plot
+# Re-import necessary libraries after code execution state reset
+import shap
+import pandas as pd
+import numpy as np
+import seaborn as sns # Import seaborn
+
+# Load uploaded datasets
+age_std_df = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
+crude_df = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
+
+# Preprocess crude suicide rates by age group and gender
+crude_df_melted = crude_df.melt(id_vars=["Country", "Sex"], var_name="Age_Group", value_name="Crude_Suicide_Rate")
+crude_df_melted["Crude_Suicide_Rate"] = pd.to_numeric(crude_df_melted["Crude_Suicide_Rate"], errors="coerce")
+
+# Calculate global average suicide rate by Age Group and Sex
+avg_risk_by_age_gender = crude_df_melted.groupby(["Age_Group", "Sex"])["Crude_Suicide_Rate"].mean().reset_index()
+
+# Sort to find highest average suicide risk
+top_risk_age_gender = avg_risk_by_age_gender.sort_values(by="Crude_Suicide_Rate", ascending=False).head(10)
+
+# Instead of using ace_tools, display the dataframe using pandas' display function
+from IPython.display import display # Import the display function if not already imported
+display(top_risk_age_gender) # This will display the top_risk_age_gender DataFrame
+
+# Dataframe construction
+data = {
+    "Age": ["15-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", "85+"],
+    "Male": [11.2, 18.5, 25.3, 35.7, 51.6, 73.9, 101.3, 121.6],
+    "Female": [5.4, 6.7, 8.1, 11.2, 15.6, 20.3, 27.5, 38.2]
+}
+df = pd.DataFrame(data)
+
+# Melt long for plotting
+df_long = df.melt(id_vars="Age", var_name="Sex", value_name="Crude_Suicide_Rate")
+
+# Generate the bar plot again
+plt.figure(figsize=(12, 6))
+sns.barplot(x="Age", y="Crude_Suicide_Rate", hue="Sex", data=df_long, palette="Set2") # Now sns is recognized
+plt.title("Crude Suicide Rates by Age Group and Sex (WHO 2019)")
+plt.ylabel("Suicide Rate per 100,000")
+plt.xlabel("Age Group")
+plt.xticks(rotation=45)
+plt.legend(title="Sex")
+plt.tight_layout()
+
+# xxxxxxxxxxxxxxxxxxxxxxxxx
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+
+
+# Calculate differences as a proxy for "importance"
+df['Importance'] = df['Male'] - df['Female']
+
+# Sort by importance
+df_sorted = df.sort_values(by='Importance', ascending=True)
+
+# SHAP-like summary plot
+plt.figure(figsize=(10, 6))
+colors = plt.cm.RdBu_r(np.linspace(0, 1, len(df_sorted)))
+plt.barh(df_sorted['Age'], df_sorted['Importance'], color=colors)
+plt.xlabel("SHAP-like Impact (Male - Female Suicide Rate)")
+plt.title("SHAP-style Summary Plot: Age Group Contribution to Suicide Risk Disparity")
+plt.grid(axis='x', linestyle='--', alpha=0.7)
+plt.axvline(0, color='black', linewidth=0.8)
+plt.tight_layout()
+plt.show()
+
+
+
+df['SHAP-like Impact (Male - Female)'] = df['Male'] - df['Female']
+df_sorted = df.sort_values(by='SHAP-like Impact (Male - Female)', ascending=False)
+
+# Display the SHAP-style summary table
+#import ace_tools as tools; tools.display_dataframe_to_user(name="SHAP Summary Table: Age Group Contribution to Suicide Risk Disparity", dataframe=df_sorted[["Age", "Male", "Female", "SHAP-like Impact (Male - Female)"]])
+# Remove the problematic import and function call
+# import ace_tools as tools; tools.display_dataframe_to_user(name="Crude Suicide Rates and Gender Disparity by Age Group", dataframe=df)
+display(df) # Use standard IPython display instead
+
+
+
+# Calculate differences as "importance" proxy for SHAP-like summary
+df['Importance'] = df['Male'] - df['Female']
+
+# Sort by importance
+df_sorted = df.sort_values(by='Importance', ascending=True)
+
+# Generate standard barplot
+df_long = df.melt(id_vars="Age", var_name="Sex", value_name="Crude_Suicide_Rate")
+plt.figure(figsize=(12, 6))
+sns.barplot(x="Age", y="Crude_Suicide_Rate", hue="Sex", data=df_long, palette="Set2")
+plt.title("Crude Suicide Rates by Age Group and Sex (WHO 2019)")
+plt.ylabel("Suicide Rate per 100,000")
+plt.xlabel("Age Group")
+plt.xticks(rotation=45)
+plt.legend(title="Sex")
+plt.tight_layout()
+plt.show()
+
+# import ace_tools as tools; tools.display_dataframe_to_user(name="Crude Suicide Rates and Gender Disparity by Age Group", dataframe=df)
+display(df) # Use standard IPython display instead
+
+#4 - global_median_suicide_rate
+
+# Process the age-standardized suicide rates (select year 2019 only)
+# Changed 'suicide_rates_std' to 'suicide_rates_age_std' to match the variable defined earlier
+age_std_melted = suicide_rates_age_std.melt(id_vars=["Country", "Sex"], var_name="Year", value_name="Age_Std_Rate")
+age_std_recent = age_std_melted[age_std_melted["Year"] == "2019"]
+age_std_recent["Age_Std_Rate"] = pd.to_numeric(age_std_recent["Age_Std_Rate"], errors="coerce")
+age_std_recent_grouped = age_std_recent.groupby("Country")["Age_Std_Rate"].mean().reset_index()
+
+# Process the crude suicide rates
+crude_melted = suicide_rates_crude.melt(id_vars=["Country", "Sex"], var_name="Age_Group", value_name="Crude_Rate")
+crude_melted["Crude_Rate"] = pd.to_numeric(crude_melted["Crude_Rate"], errors="coerce")
+crude_avg = crude_melted.groupby(["Country", "Sex"])["Crude_Rate"].mean().reset_index()
+crude_avg_grouped = crude_avg.groupby("Country")["Crude_Rate"].mean().reset_index()
+
+# Merge facilities and human resources on Country and Year
+infra_df = pd.merge(facilities, human_resources, on=["Country", "Year"], how="outer")
+
+# Merge all into one dataset
+merged_df = pd.merge(infra_df, age_std_recent_grouped, on="Country", how="inner")
+merged_df = pd.merge(merged_df, crude_avg_grouped, on="Country", how="left")
+
+# Clean and calculate global median age-standardized suicide rate
+merged_df["Age_Std_Rate"] = pd.to_numeric(merged_df["Age_Std_Rate"], errors="coerce")
+merged_df_cleaned = merged_df.dropna(subset=["Age_Std_Rate"])
+global_median_suicide_rate = merged_df_cleaned["Age_Std_Rate"].median()
+
+global_median_suicide_rate
+
+
+#5 - Mental Health Recommendations with Risk Classification
+
+# Reload datasets after kernel reset
+age_std = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
+crude = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
+facilities = pd.read_csv("Facilities-February_18_2025.csv")
+hr = pd.read_csv("Human_Resources-February_18_2025.csv")
+
+# Preprocess age-standardized suicide rates for 2019
+age_std_2019 = age_std.melt(id_vars=["Country", "Sex"], var_name="Year", value_name="Age_Std_Rate")
+age_std_2019 = age_std_2019[age_std_2019["Year"] == "2019"]
+age_std_2019["Age_Std_Rate"] = pd.to_numeric(age_std_2019["Age_Std_Rate"], errors="coerce")
+age_std_2019["Risk_Level"] = (age_std_2019["Age_Std_Rate"] > 8.5).astype(int)
+age_std_2019["Risk_Interpretation"] = age_std_2019["Risk_Level"].map({1: "High Risk", 0: "Low Risk"})
+
+# Merge facilities and HR data
+infra_df = pd.merge(facilities, hr, on=["Country", "Year"], how="outer")
+infra_avg = infra_df.groupby("Country").mean(numeric_only=True).reset_index()
+
+# Merge infrastructure data with suicide risk classification
+combined_df = pd.merge(age_std_2019, infra_avg, on="Country", how="inner")
+
+# Define facility adequacy recommendations based on risk classification
+def recommend_facilities(row):
+    if row["Risk_Level"] == 1:  # High risk
+        return {
+            "Recommended_Mental_Hospitals": row["Mental _hospitals"] + 1.0,
+            "Recommended_Health_Units": row["health_units"] + 2.0,
+            "Recommended_Outpatient_Facilities": row["outpatient _facilities"] + 3.0,
+            "Recommended_Day_Treatment": row["day _treatment"] + 1.5,
+            "Recommended_Residential_Facilities": row["residential_facilities"] + 2.0
+        }
+    else:
+        return {
+            "Recommended_Mental_Hospitals": row["Mental _hospitals"],
+            "Recommended_Health_Units": row["health_units"],
+            "Recommended_Outpatient_Facilities": row["outpatient _facilities"],
+            "Recommended_Day_Treatment": row["day _treatment"],
+            "Recommended_Residential_Facilities": row["residential_facilities"]
+        }
+
+# Apply recommendations
+recommendations = combined_df.apply(recommend_facilities, axis=1, result_type='expand')
+recommendation_output = pd.concat([
+    combined_df[["Country", "Sex", "Age_Std_Rate", "Risk_Interpretation",
+                 "Mental _hospitals", "health_units", "outpatient _facilities",
+                 "day _treatment", "residential_facilities"]],
+    recommendations
+], axis=1)
+
+
+# Dsplay the results_df DataFrame
+
+from IPython.display import display
+display(recommendation_output)
+
+
+#6 – Figure 3: Comparison of Mental Health Infrastructure Facilities
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+
+# Sample data extracted from the image and prior summary (subset for high-risk countries)
+data = {
+    "Country": ["Angola", "Zambia", "Zimbabwe", "Viet Nam"],
+    "Mental_Hospitals_Actual": [0.011, 0.062, 0.025, 0.043],
+    "Mental_Hospitals_Recommended": [1.011, 1.062, 1.025, 1.043],
+    "Health_Units_Actual": [None, 0.062, 0.025, 0.017],
+    "Health_Units_Recommended": [None, 2.062, 2.025, 2.017],
+    "Outpatient_Actual": [None, 0.205, 0.057, 0.009],
+    "Outpatient_Recommended": [None, 3.205, 3.057, 3.009],
+    "Residential_Actual": [0.014, 0.019, 0.051, None],
+    "Residential_Recommended": [2.014, 2.019, 2.051, None]
+}
+
+df = pd.DataFrame(data)
+
+# Plot
+fig, axs = plt.subplots(2, 2, figsize=(16, 10))
+facility_types = [
+    ("Mental_Hospitals_Actual", "Mental_Hospitals_Recommended", "Mental Hospitals"),
+    ("Health_Units_Actual", "Health_Units_Recommended", "Health Units"),
+    ("Outpatient_Actual", "Outpatient_Recommended", "Outpatient Facilities"),
+    ("Residential_Actual", "Residential_Recommended", "Residential Facilities")
+]
+
+for ax, (actual, recommended, title) in zip(axs.flat, facility_types):
+    ax.bar(df["Country"], df[actual], label="Actual", color='steelblue')
+    ax.bar(df["Country"], df[recommended], label="Recommended", color='indianred', alpha=0.7)
+    ax.set_title(title)
+    ax.set_ylabel("Facilities per 100,000")
+    ax.legend()
+    ax.set_xticklabels(df["Country"], rotation=45)
+
+plt.tight_layout()
+plt.show()
+
+# Create DataFrame
+df_infra = pd.DataFrame(data)
+
+# Save to Excel file
+excel_file_path = "Mental_Health_Infrastructure_Facilities_Comparison.xlsx"
+df_infra.to_excel(excel_file_path, index=False)
+
+# Display table to user using standard IPython display
+from IPython.display import display # Import the display function if not already imported
+display(df_infra) # Use display to show the dataframe
+
+excel_file_path
+
+#7-The Recommendations by Risk
+# Preprocess suicide rates - (2019)
+age_std_melted = suicide_rates_age_std.melt(id_vars=["Country", "Sex"], var_name="Year", value_name="Age_Std_Rate") # Changed 'suicide_rates_std' to 'suicide_rates_age_std'
+age_std_2019 = age_std_melted[age_std_melted["Year"] == "2019"]
+age_std_2019["Age_Std_Rate"] = pd.to_numeric(age_std_2019["Age_Std_Rate"], errors="coerce")
+age_std_2019["Risk_Level"] = (age_std_2019["Age_Std_Rate"] > 8.5).astype(int)
+age_std_2019["Risk_Interpretation"] = age_std_2019["Risk_Level"].map({1: "High Risk", 0: "Low Risk"})
+
+# Preprocess crude suicide rates
+crude_melted = suicide_rates_crude.melt(id_vars=["Country", "Sex"], var_name="Age_Group", value_name="Crude_Rate")
+crude_melted["Crude_Rate"] = pd.to_numeric(crude_melted["Crude_Rate"], errors="coerce")
+crude_melted["Risk_Level"] = (crude_melted["Crude_Rate"] > 8.5).astype(int)
+crude_melted["Risk_Interpretation"] = crude_melted["Risk_Level"].map({1: "High Risk", 0: "Low Risk"})
+
+# Average human resource availability per country
+hr_avg = human_resources.groupby("Country")[["Psychiatrists", "Nurses", "Social_workers", "Psychologists"]].mean().reset_index()
+
+# Merge infrastructure with risk data
+risk_hr_df = pd.merge(age_std_2019, hr_avg, on="Country", how="inner")
+
+# Recommended human resource increases based on risk classification
+def recommend_hr(row):
+    if row["Risk_Level"] == 1:
+        return {
+            "Recommended_Psychiatrists": row["Psychiatrists"] + 5,
+            "Recommended_Nurses": row["Nurses"] + 10,
+            "Recommended_Social_workers": row["Social_workers"] + 7,
+            "Recommended_Psychologists": row["Psychologists"] + 5
+        }
+    else:
+        return {
+            "Recommended_Psychiatrists": row["Psychiatrists"],
+            "Recommended_Nurses": row["Nurses"],
+            "Recommended_Social_workers": row["Social_workers"],
+            "Recommended_Psychologists": row["Psychologists"]
+        }
+
+recommendations_hr = risk_hr_df.apply(recommend_hr, axis=1, result_type='expand')
+
+# Combine with original data
+hr_recommendation_output = pd.concat([
+    risk_hr_df[["Country", "Sex", "Age_Std_Rate", "Risk_Interpretation",
+                "Psychiatrists", "Nurses", "Social_workers", "Psychologists"]],
+    recommendations_hr
+], axis=1)
+
+# Display the dataframe using pandas' display function
+from IPython.display import display
+display(hr_recommendation_output)
+
+
+#8 - Comparative Workforce -Treatment Recommendations
+
+# Data Creation
+data_hr = {
+    "Country": ["Afghanistan", "Angola", "Zambia", "Zimbabwe"],
+    "Risk_Interpretation": ["Low Risk", "High Risk", "High Risk", "High Risk"],
+    "Psychiatrists_Current": [0.231, 0.057, 0.056, 0.095],
+    "Nurses_Current": [0.098, 0.66, 1.429, 3.486],
+    "Social_Workers_Current": [None, 0.022, 0.019, 0.634],
+    "Psychologists_Current": [0.296, 0.179, 0.031, 0.057],
+    "Psychiatrists_Recommended": [0.231, 5.057, 5.056, 5.095],
+    "Nurses_Recommended": [0.098, 10.66, 11.429, 13.486],
+    "Social_Workers_Recommended": [None, 7.022, 7.019, 7.634],
+    "Psychologists_Recommended": [0.296, 5.179, 5.031, 5.057],
+}
+
+df_hr = pd.DataFrame(data_hr)
+
+# Create side-by-side bar charts
+fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+resource_types = ["Psychiatrists", "Nurses", "Social_Workers", "Psychologists"]
+colors = ["skyblue", "lightcoral"]
+
+for idx, resource in enumerate(resource_types):
+    ax = axes[idx // 2, idx % 2]
+    current = df_hr[f"{resource}_Current"]
+    recommended = df_hr[f"{resource}_Recommended"]
+    x = df_hr["Country"]
+
+    ax.bar(x, current, width=0.35, label="Current", color=colors[0], align='center')
+    ax.bar(x, recommended, width=0.35, label="Recommended", color=colors[1], align='edge')
+    ax.set_title(f"{resource.replace('_', ' ')} (per 100,000)", fontsize=12)
+    ax.set_ylabel("Workforce per 100k")
+    ax.set_xticklabels(x, rotation=45, ha="right")
+    ax.legend()
+
+plt.tight_layout()
+plt.suptitle("Current vs Recommended Mental Health Human Resources by Country", fontsize=18, y=1.05)
+plt.show()
+
+
+#9 Suicide Forecasting and Analysis by Income Group and Age
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+# Load datasets
+income_group_df = pd.read_csv("world-bank-income-groups-v1.csv")
+age_standardized_df = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
+crude_suicide_df = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
+
+# Prepare age-standardized data
+df_age_std = age_standardized_df.melt(
+    id_vars=["Country", "Sex"],
+    value_vars=["2000", "2010", "2015", "2016", "2019"],
+    var_name="Year",
+    value_name="SuicideRate"
+)
+df_age_std["Year"] = df_age_std["Year"].astype(int)
+
+# Merge income classification
+df_income = income_group_df.rename(columns={"Country Name": "Country", "World Bank's income classification": "IncomeGroup"})
+# The issue was in the merge operation: you need to merge on 'Country'
+merged_income_suicide = pd.merge(df_age_std, df_income[['Country', 'IncomeGroup']], on="Country", how="left") # Changed df_income to df_income[['Country', 'IncomeGroup']]
+merged_income_suicide.dropna(subset=["IncomeGroup"], inplace=True)
+
+# Time Series Forecasting
+
+grouped_forecast_data = merged_income_suicide.groupby(["Year", "IncomeGroup"])['SuicideRate'].mean().reset_index()
+
+forecast_results = {}
+for group in grouped_forecast_data["IncomeGroup"].unique():
+    group_data = grouped_forecast_data[grouped_forecast_data["IncomeGroup"] == group]
+    ts = group_data.set_index("Year")["SuicideRate"]
+    model = ExponentialSmoothing(ts, trend='add', seasonal=None)
+    fit = model.fit()
+    forecast = fit.forecast(11)  # Forecast for 2020 to 2030
+    forecast_results[group] = forecast
+
+forecast_df = pd.DataFrame(forecast_results)
+forecast_df.index.name = "Year"
+forecast_df.reset_index(inplace=True)
+
+
+# Crude suicide age group trends
+crude_long = crude_suicide_df.melt(
+    id_vars=["Country", "Sex"],
+    var_name="AgeGroup",
+    value_name="CrudeSuicideRate"
+)
+crude_with_income = pd.merge(crude_long, df_income, on="Country", how="left")
+crude_with_income.dropna(subset=["IncomeGroup"], inplace=True)
+
+age_group_summary = crude_with_income.groupby(["IncomeGroup", "Sex", "AgeGroup"]).mean(numeric_only=True).reset_index()
+
+# Plot age group trends
+plt.figure(figsize=(12, 6))
+sns.lineplot(data=age_group_summary, x="AgeGroup", y="CrudeSuicideRate", hue="IncomeGroup", style="Sex", markers=True)
+plt.title("Suicide Rate Trends by Age Group and Income Level")
+plt.xticks(rotation=45)
+plt.ylabel("Crude Suicide Rate")
+plt.tight_layout()
+plt.savefig("suicide_agegroup_income_trends.png")
+
+# Display result
+forecast_df.head()
+
+# Age-group summary in a pivot table format for display
+age_group_pivot = age_group_summary.pivot_table(
+    index=["AgeGroup"],
+    columns=["IncomeGroup", "Sex"],
+    values="CrudeSuicideRate",
+    aggfunc="mean"
+).round(2).reset_index()
+
+# Display the dataframe using pandas' display function
+from IPython.display import display # Import the display function
+display(age_group_pivot) # Display the age_group_pivot DataFrame
+
+
+#10 Predicted Suicide Rate within Religious Beliefs
+
+# Load datasets
+age_std_df = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
+crude_suicide_df = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
+religion_df = pd.read_excel("Religious_Composition_by_Country_2010-2050-v4.xlsx", sheet_name='rounded_population')
+
+# Define religious columns before processing
+religion_cols = ['Christians', 'Muslims', 'Unaffiliated', 'Hindus',
+                 'Buddhists', 'Folk Religions', 'Other Religions', 'Jews']
+
+# Clean religion data
+for col in religion_cols:
+    religion_df[col] = (
+        religion_df[col]
+        .astype(str)
+        .str.replace(",", "")
+        .str.replace("<", "")
+        .str.strip()
+        .replace("", "0")
+        .astype(float)
+    )
+
+religion_df["Total"] = religion_df[religion_cols].sum(axis=1)
+for col in religion_cols:
+    religion_df[col + "_pct"] = religion_df[col] / religion_df["Total"]
+
+# Filter and rename columns
+religion_pct = religion_df[religion_df["Year"].isin([2010, 2020])]
+religion_pct = religion_pct[["Year", "Country"] + [col + "_pct" for col in religion_cols]]
+religion_pct.columns = ['Year', 'Country'] + religion_cols
+
+# Reshape age-standardized suicide data
+age_std_df = age_std_df.melt(id_vars=["Country", "Sex"], var_name="Year", value_name="Age_Standardized_Rate")
+age_std_df["Year"] = age_std_df["Year"].astype(int)
+age_std_df = age_std_df[age_std_df["Year"].isin([2010, 2020])]
+
+# Duplicate crude data to match both years
+crude_df_2010 = crude_df.copy()
+crude_df_2010["Year"] = 2010
+crude_df_2020 = crude_df.copy()
+crude_df_2020["Year"] = 2020
+crude_both = pd.concat([crude_df_2010, crude_df_2020], ignore_index=True)
+
+# Merge all datasets
+merged_df = (
+    age_std_df
+    .merge(crude_both, on=["Country", "Sex", "Year"], how="inner")
+    .merge(religion_pct, on=["Country", "Year"], how="inner")
+)
+
+# Clean column names
+merged_df.columns = merged_df.columns.str.strip()
+
+# Define features and target
+feature_cols = [
+    '85_above', '75to84', '65to74', '55to64', '45to54', '35to44', '25to34', '15to24',
+    'Christians', 'Muslims', 'Unaffiliated', 'Hindus', 'Buddhists',
+    'Folk Religions', 'Other Religions', 'Jews'
+]
+
+# Prepare model input and target
+model_df = merged_df.dropna(subset=['Age_Standardized_Rate'])
+X = model_df[feature_cols]
+y = model_df['Age_Standardized_Rate']
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train Random Forest
+rf_model = RandomForestRegressor(random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Predict and assign to DataFrame
+model_df["Predicted_Suicide_Rate"] = rf_model.predict(model_df[feature_cols])
+
+# Display final DataFrame
+display(model_df)
+
+# Load the feature importance data from previous context
+feature_importance = {
+    '85_above': 0.028,
+    '75to84': 0.042,
+    '65to74': 0.050,
+    '55to64': 0.108,
+    '45to54': 0.114,
+    '35to44': 0.086,
+    '25to34': 0.057,
+    '15to24': 0.049,
+    'Christians': 0.062,
+    'Muslims': 0.077,
+    'Unaffiliated': 0.082,
+    'Hindus': 0.057,
+    'Buddhists': 0.047,
+    'Folk Religions': 0.068,
+    'Other Religions': 0.035,
+    'Jews': 0.039
+}
+
+
+# Convert to DataFrame
+importance_df = pd.DataFrame(list(feature_importance.items()), columns=['Feature', 'Importance'])
+importance_df.sort_values(by='Importance', ascending=False, inplace=True)
+
+# Display the DataFrame
+#import ace_tools as tools; tools.display_dataframe_to_user(name="Feature Importance - Suicide Rate Model", dataframe=importance_df)
+display(importance_df) # Use the standard display function
+
+# Create DataFrame
+importance_df = pd.DataFrame(list(feature_importance.items()), columns=['Feature', 'Importance'])
+importance_df.sort_values(by='Importance', ascending=True, inplace=True)
+
+# Plot
+plt.figure(figsize=(10, 8))
+sns.barplot(x='Importance', y='Feature', data=importance_df, palette='viridis')
+plt.title('Feature Importance - Random Forest Model')
+plt.xlabel('Importance Score')
+plt.ylabel('Feature')
+plt.grid(axis='x', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.show()
+
+# Predict Actual Suicide Rates
+feature_cols = [
+    '85_above', '75to84', '65to74', '55to64', '45to54', '35to44', '25to34', '15to24',
+    'Christians', 'Muslims', 'Unaffiliated', 'Hindus', 'Buddhists', 'Folk Religions', 'Other Religions', 'Jews'
+]
+
+model_df = merged_df.dropna(subset=['Age_Standardized_Rate'])
+X = model_df[feature_cols]
+y = model_df['Age_Standardized_Rate']
+
+# Train/test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train Random Forest Regressor
+rf_model = RandomForestRegressor(random_state=42)
+rf_model.fit(X_train, y_train)
+rf_pred = rf_model.predict(X_test)
+
+# Plot Actual vs Predicted
+plt.figure(figsize=(8, 6))
+sns.scatterplot(x=y_test, y=rf_pred)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], '--', color='red')
+plt.title("Random Forest: Actual vs Predicted Suicide Rates")
+plt.xlabel("Actual Age-Standardized Rate")
+plt.ylabel("Predicted Age-Standardized Rate")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+#11 Observed vs. Predicted Suicide Rates Based on Unemployment by Education
+
+
+
+# Load datasets
+age_standardized_df = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
+crude_suicide_df = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
+unemployment_df = pd.read_csv("Unemployment-WDI-BothSexes-SuicideRates-v2.csv")
+
+# Filter unemployment data
+unemployment_filtered = unemployment_df[
+    unemployment_df['Series Name'].str.contains("Unemployment with (basic|advanced) education", case=False, regex=True) &
+    unemployment_df['Series Name'].str.contains("(male|female)", case=False, regex=True)
+]
+
+# Extract Education and Gender columns
+def parse_series(series_name):
+    gender = "Male" if "male" in series_name.lower() else "Female"
+    education = "Basic" if "basic" in series_name.lower() else "Advanced"
+    return pd.Series([education, gender])
+
+unemployment_filtered[['Education', 'Gender']] = unemployment_filtered['Series Name'].apply(parse_series)
+
+# Reshape unemployment dataset
+unemp_melted = unemployment_filtered.melt(
+    id_vars=["Country Name", "Education", "Gender"],
+    value_vars=["2000", "2010", "2015", "2016", "2019"],
+    var_name="Year",
+    value_name="UnemploymentRate"
+)
+unemp_melted.rename(columns={"Country Name": "Country"}, inplace=True)
+unemp_melted['Year'] = unemp_melted['Year'].astype(int)
+unemp_melted['UnemploymentRate'] = pd.to_numeric(unemp_melted['UnemploymentRate'], errors='coerce')
+
+# Reshape suicide dataset
+suicide_long = age_standardized_df.melt(
+    id_vars=["Country", "Sex"],
+    value_vars=["2000", "2010", "2015", "2016", "2019"],
+    var_name="Year",
+    value_name="SuicideRate"
+)
+
+suicide_long['Year'] = suicide_long['Year'].astype(int)
+
+# Merge datasets
+merged_df = pd.merge(
+    suicide_long,
+    unemp_melted,
+    left_on=["Country", "Sex", "Year"],
+    right_on=["Country", "Gender", "Year"],
+    how="inner"
+)
+
+merged_df.drop(columns=["Gender"], inplace=True)
+merged_df.dropna(inplace=True)
+
+# Pivot for regression
+edu_wide = merged_df.pivot_table(
+    values="UnemploymentRate",
+    index=["Country", "Year", "Sex"],
+    columns="Education"
+).reset_index()
+
+final_df = pd.merge(
+    edu_wide,
+    merged_df[["Country", "Year", "Sex", "SuicideRate"]].drop_duplicates(),
+    on=["Country", "Year", "Sex"]
+)
+final_df.dropna(inplace=True)
+
+# Regression
+X = final_df[["Basic", "Advanced"]]
+y = final_df["SuicideRate"]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = LinearRegression()
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+
+
+# Prepare Final Prediction Table
+prediction_table = final_df[["Country", "Year", "Sex", "Advanced", "Basic", "SuicideRate"]]
+prediction_table = prediction_table.sort_values(by=["Country", "Year"]).reset_index(drop=True)
+
+
+
+# Display the main prediction table
+print("\nPrediction Table (Input Data):")
+display(prediction_table)
+
+# Plot Observed vs Predicted
+plt.figure(figsize=(8, 6))
+plt.scatter(y_test, y_pred, alpha=0.7)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], '--', color='red', linewidth=2)
+plt.xlabel('Observed Suicide Rate')
+plt.ylabel('Predicted Suicide Rate')
+plt.title('Observed vs Predicted Suicide Rates\n(Based on Unemployment by Education Level)')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# Correlation matrix
+plt.figure(figsize=(6, 4))
+sns.heatmap(final_df.corr(numeric_only=True), annot=True, cmap="coolwarm")
+plt.title("Correlation Matrix: Unemployment (by Education) and Suicide Rate")
+plt.tight_layout()
+plt.show()
+
+
+#12 Limitations Based on Healthcare Expenditure
+
+# Reload datasets
+age_standardized_df = pd.read_csv("Age-standardized_suicide_rates-2000-2020-April_18_2025.csv")
+crude_suicide_df = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
+healthcare_expenditure_df = pd.read_csv("Healthcare expenditure vs. GDP per capita, 2022-v1.csv")
+
+# Clean and prepare age-standardized suicide rate (use average of most recent 5 years as representative)
+age_standardized_df = age_standardized_df[age_standardized_df["Sex"].str.strip() == "Both sexes"]
+recent_years = ["2016", "2019", "2020"]
+age_standardized_df["Age_Std_Rate"] = age_standardized_df[recent_years].mean(axis=1)
+age_std_country = age_standardized_df[["Country", "Age_Std_Rate"]]
+a
+# Prepare crude suicide rates per age group and sex
+age_categories = crude_suicide_df.columns[2:]
+crude_avg_by_country = crude_suicide_df.groupby(['Country', 'Sex'])[age_categories].mean().reset_index()
+crude_country = crude_avg_by_country.pivot(index='Country', columns='Sex', values=age_categories).reset_index()
+crude_country.columns.name = None
+crude_country.columns = ['Country'] + [f'{age}_{sex}' for age, sex in crude_country.columns[1:]]
+
+# Deduplicate healthcare data: use latest available year per country
+healthcare_expenditure_df = healthcare_expenditure_df.sort_values('Year')
+healthcare_latest = healthcare_expenditure_df.drop_duplicates(subset='Country', keep='last')
+
+# Merge all sources on unique country
+merged_df = pd.merge(age_std_country, healthcare_latest, on='Country', how='left')
+merged_df = pd.merge(merged_df, crude_country, on='Country', how='left')
+
+# Create binary risk classification
+merged_df["High_Risk"] = (merged_df["Age_Std_Rate"] > 8.5).astype(int)
+
+# Add World Region
+merged_df["World_Region"] = merged_df.get("World regions according to OWID", "Unknown")
+
+# Compute Gender Gap
+male_cols = [col for col in merged_df.columns if '_Male' in col]
+female_cols = [col for col in merged_df.columns if '_Female' in col]
+merged_df["Gender_Gap"] = merged_df[male_cols].mean(axis=1) - merged_df[female_cols].mean(axis=1)
+
+# import ace_tools as tools; tools.display_dataframe
+display(merged_df)
+
+# Summarize counts by world region (deduplicated)
+region_summary = merged_df.groupby("World_Region")["High_Risk"].value_counts().unstack().fillna(0).astype(int)
+region_summary.reset_index(inplace=True)
+display(region_summary) # Display this result as well
+
+
+
+# Recreate the region_summary from current merged_df
+region_summary = merged_df.groupby("World_Region")["High_Risk"].value_counts().unstack().fillna(0).astype(int)
+region_summary.reset_index(inplace=True)
+
+# Melt the DataFrame for better plotting
+region_melted = region_summary.melt(id_vars="World_Region", value_vars=[0, 1],
+                                     var_name="Predicted_Risk", value_name="Number of Countries")
+
+# Barplot
+plt.figure(figsize=(12, 6))
+barplot = sns.barplot(data=region_melted, x="World_Region", y="Number of Countries", hue="Predicted_Risk", palette="Set2")
+barplot.set_title("Predicted High-Risk vs Low-Risk Suicide Categories by World Region (Deduplicated)")
+barplot.set_ylabel("Number of Countries")
+barplot.set_xlabel("World Region")
+plt.xticks(rotation=45)
+plt.legend(title="Predicted Risk (0=Low, 1=High)")
+
+# Annotate counts
+for container in barplot.containers:
+    barplot.bar_label(container, fmt='%d', label_type='edge', padding=2)
+
+plt.tight_layout()
+plt.show()
