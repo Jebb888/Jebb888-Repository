@@ -10,6 +10,9 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report
 import shap
 
+import numpy as np
+import seaborn as sns # Import seaborn
+
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, accuracy_score, roc_auc_score, roc_curve
@@ -27,7 +30,6 @@ file_paths = {
     'Human_Resources': 'Human_Resources-February_18_2025.csv'
 }
 datasets = {name: pd.read_csv(path) for name, path in file_paths.items()}
-
 
 # Load the datasets
 datasets = {name: pd.read_csv(path) for name, path in file_paths.items()}
@@ -126,14 +128,7 @@ results_df.reset_index(drop=True, inplace=True)
 from IPython.display import display
 display(results_df)
 
-
-#3 - Crude Suicide Rates by Age Group and Sex and Figure 2. SHAP Summary Plot
-# Re-import necessary libraries after code execution state reset
-import shap
-import pandas as pd
-import numpy as np
-import seaborn as sns # Import seaborn
-
+#3 - Crude Suicide Rates by Age Group and Sex and SHAP Summary Plot
 # Load uploaded datasets
 age_std_df = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
 crude_df = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
@@ -177,7 +172,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-
 # Calculate differences as a proxy for "importance"
 df['Importance'] = df['Male'] - df['Female']
 
@@ -196,7 +190,6 @@ plt.tight_layout()
 plt.show()
 
 
-
 df['SHAP-like Impact (Male - Female)'] = df['Male'] - df['Female']
 df_sorted = df.sort_values(by='SHAP-like Impact (Male - Female)', ascending=False)
 
@@ -205,8 +198,6 @@ df_sorted = df.sort_values(by='SHAP-like Impact (Male - Female)', ascending=Fals
 # Remove the problematic import and function call
 # import ace_tools as tools; tools.display_dataframe_to_user(name="Crude Suicide Rates and Gender Disparity by Age Group", dataframe=df)
 display(df) # Use standard IPython display instead
-
-
 
 # Calculate differences as "importance" proxy for SHAP-like summary
 df['Importance'] = df['Male'] - df['Female']
@@ -227,12 +218,11 @@ plt.tight_layout()
 plt.show()
 
 # import ace_tools as tools; tools.display_dataframe_to_user(name="Crude Suicide Rates and Gender Disparity by Age Group", dataframe=df)
-display(df) # Use standard IPython display instead
+display(df) # # standard IPython display 
 
 #4 - global_median_suicide_rate
 
 # Process the age-standardized suicide rates (select year 2019 only)
-# Changed 'suicide_rates_std' to 'suicide_rates_age_std' to match the variable defined earlier
 age_std_melted = suicide_rates_age_std.melt(id_vars=["Country", "Sex"], var_name="Year", value_name="Age_Std_Rate")
 age_std_recent = age_std_melted[age_std_melted["Year"] == "2019"]
 age_std_recent["Age_Std_Rate"] = pd.to_numeric(age_std_recent["Age_Std_Rate"], errors="coerce")
@@ -258,10 +248,9 @@ global_median_suicide_rate = merged_df_cleaned["Age_Std_Rate"].median()
 
 global_median_suicide_rate
 
-
 #5 - Mental Health Recommendations with Risk Classification
 
-# Reload datasets after kernel reset
+# Reload datasets 
 age_std = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
 crude = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
 facilities = pd.read_csv("Facilities-February_18_2025.csv")
@@ -319,7 +308,6 @@ display(recommendation_output)
 #6 – Figure 3: Comparison of Mental Health Infrastructure Facilities
 import pandas as pd
 import matplotlib.pyplot as plt
-
 
 
 # Sample data extracted from the image and prior summary (subset for high-risk countries)
@@ -461,12 +449,12 @@ plt.tight_layout()
 plt.suptitle("Current vs Recommended Mental Health Human Resources by Country", fontsize=18, y=1.05)
 plt.show()
 
-
 #9 Suicide Forecasting and Analysis by Income Group and Age
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from sklearn.ensemble impport RandomForestRegressor # Import RandomForestRegressor
 
 # Load datasets
 income_group_df = pd.read_csv("world-bank-income-groups-v1.csv")
@@ -489,7 +477,6 @@ merged_income_suicide = pd.merge(df_age_std, df_income[['Country', 'IncomeGroup'
 merged_income_suicide.dropna(subset=["IncomeGroup"], inplace=True)
 
 # Time Series Forecasting
-
 grouped_forecast_data = merged_income_suicide.groupby(["Year", "IncomeGroup"])['SuicideRate'].mean().reset_index()
 
 forecast_results = {}
@@ -641,7 +628,6 @@ feature_importance = {
     'Jews': 0.039
 }
 
-
 # Convert to DataFrame
 importance_df = pd.DataFrame(list(feature_importance.items()), columns=['Feature', 'Importance'])
 importance_df.sort_values(by='Importance', ascending=False, inplace=True)
@@ -693,10 +679,7 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-
 #11 Observed vs. Predicted Suicide Rates Based on Unemployment by Education
-
-
 
 # Load datasets
 age_standardized_df = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
@@ -773,12 +756,9 @@ model = LinearRegression()
 model.fit(X_train, y_train)
 y_pred = model.predict(X_test)
 
-
 # Prepare Final Prediction Table
 prediction_table = final_df[["Country", "Year", "Sex", "Advanced", "Basic", "SuicideRate"]]
 prediction_table = prediction_table.sort_values(by=["Country", "Year"]).reset_index(drop=True)
-
-
 
 # Display the main prediction table
 print("\nPrediction Table (Input Data):")
@@ -802,10 +782,9 @@ plt.title("Correlation Matrix: Unemployment (by Education) and Suicide Rate")
 plt.tight_layout()
 plt.show()
 
-
 #12 Limitations Based on Healthcare Expenditure
 
-# Reload datasets
+# Load datasets
 age_standardized_df = pd.read_csv("Age-standardized_suicide_rates-2000-2020-April_18_2025.csv")
 crude_suicide_df = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
 healthcare_expenditure_df = pd.read_csv("Healthcare expenditure vs. GDP per capita, 2022-v1.csv")
