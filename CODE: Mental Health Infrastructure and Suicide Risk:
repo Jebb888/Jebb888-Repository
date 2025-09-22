@@ -1,4 +1,4 @@
-#CODE: Mental Health Infrastructure and Suicide Risk: 
+#CODE: Mental Health Infrastructure and Suicide Risk:
 # 1. inspect the datasets to understand
 !pip install scikit-learn
 !pip install shap
@@ -218,7 +218,7 @@ plt.tight_layout()
 plt.show()
 
 # import ace_tools as tools; tools.display_dataframe_to_user(name="Crude Suicide Rates and Gender Disparity by Age Group", dataframe=df)
-display(df) # # standard IPython display 
+display(df) # # standard IPython display
 
 #4 - global_median_suicide_rate
 
@@ -250,7 +250,7 @@ global_median_suicide_rate
 
 #5 - Mental Health Recommendations with Risk Classification
 
-# Reload datasets 
+# Reload datasets
 age_std = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
 crude = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
 facilities = pd.read_csv("Facilities-February_18_2025.csv")
@@ -454,7 +454,7 @@ plt.show()
 import matplotlib.pyplot as plt
 import seaborn as sns
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from sklearn.ensemble impport RandomForestRegressor # Import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor # Import RandomForestRegressor
 
 # Load datasets
 income_group_df = pd.read_csv("world-bank-income-groups-v1.csv")
