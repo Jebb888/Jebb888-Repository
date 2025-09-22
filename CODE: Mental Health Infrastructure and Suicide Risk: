@@ -681,6 +681,8 @@ plt.show()
 
 #11 Observed vs. Predicted Suicide Rates Based on Unemployment by Education
 
+from sklearn.linear_model import LinearRegression # Import LinearRegression
+
 # Load datasets
 age_standardized_df = pd.read_csv("Age-standardized_suicide_rates-February_18_2025.csv")
 crude_suicide_df = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
@@ -784,7 +786,7 @@ plt.show()
 
 #12 Limitations Based on Healthcare Expenditure
 
-# Load datasets
+# Reload datasets
 age_standardized_df = pd.read_csv("Age-standardized_suicide_rates-2000-2020-April_18_2025.csv")
 crude_suicide_df = pd.read_csv("Crude_suicide_rates-February_18_2025.csv")
 healthcare_expenditure_df = pd.read_csv("Healthcare expenditure vs. GDP per capita, 2022-v1.csv")
@@ -794,7 +796,7 @@ age_standardized_df = age_standardized_df[age_standardized_df["Sex"].str.strip()
 recent_years = ["2016", "2019", "2020"]
 age_standardized_df["Age_Std_Rate"] = age_standardized_df[recent_years].mean(axis=1)
 age_std_country = age_standardized_df[["Country", "Age_Std_Rate"]]
-a
+
 # Prepare crude suicide rates per age group and sex
 age_categories = crude_suicide_df.columns[2:]
 crude_avg_by_country = crude_suicide_df.groupby(['Country', 'Sex'])[age_categories].mean().reset_index()
