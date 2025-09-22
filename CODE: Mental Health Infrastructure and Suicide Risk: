@@ -37,9 +37,7 @@ dataset_info = {name: df.info() for name, df in datasets.items()}
 
 # Display first few rows of each dataset to understand structure
 dataset_samples = {name: df.head() for name, df in datasets.items()}
-
 dataset_samples
-
 
 #2 – Model Comparison: Random Forest, Gradient Boosting, VSM and Logistic Regression - #Table 1. Model Performance
 !pip install shap
@@ -60,8 +58,6 @@ crude_melted = suicide_rates_crude.melt(id_vars=["Country", "Sex"], var_name="Ag
 crude_melted["Crude_Rate"] = pd.to_numeric(crude_melted["Crude_Rate"], errors="coerce")
 crude_avg = crude_melted.groupby(["Country", "Sex"])["Crude_Rate"].mean().reset_index()
 crude_avg_grouped = crude_avg.groupby("Country")["Crude_Rate"].mean().reset_index()
-
-# ... (rest of your code remains the same)
 
 # Merge datasets
 infra_df = pd.merge(facilities, human_resources, on=["Country", "Year"], how="outer")
@@ -176,8 +172,6 @@ plt.xlabel("Age Group")
 plt.xticks(rotation=45)
 plt.legend(title="Sex")
 plt.tight_layout()
-
-# xxxxxxxxxxxxxxxxxxxxxxxxx
 
 import matplotlib.pyplot as plt
 import pandas as pd
